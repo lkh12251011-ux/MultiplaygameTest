@@ -1,23 +1,30 @@
 ﻿
 #include "Player/DXPlayerCharacter.h"
 
+#include "Player/DXPlayerController.h"
 #include "EnhancedInputSubsystems.h"
+
+#include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "EnhancedInputComponent.h"
+#include "Component/DXStatusComponent.h"
+#include "Component/DXHPTextWidgetComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "Gimmick/DXLandMine.h"
-#include "Components/CapsuleComponent.h"
+
 #include "Engine/DamageEvents.h"
 #include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
-#include "Component/DXStatusComponent.h"
-#include "Component/DXHPTextWidgetComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "UI/UW_HPText.h"
+
+#include "GameMode/DXGameModeBase.h"
+#include "GameState/DXGameStateBase.h"
+
 
 ADXPlayerCharacter::ADXPlayerCharacter()
 	: bCanAttack(true)
@@ -53,6 +60,8 @@ ADXPlayerCharacter::ADXPlayerCharacter()
 	HPTextWidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, 100.f));
 	HPTextWidgetComponent->SetWidgetSpace(EWidgetSpace::World);
 	HPTextWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	StatusComponent->OnOutOfCurrentHP.AddUObject(this, &ThisClass::OnDeath);
 }
 
 void ADXPlayerCharacter::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
@@ -133,7 +142,12 @@ float ADXPlayerCharacter::TakeDamage(float DamageAmount, struct FDamageEvent con
 	UKismetSystemLibrary::PrintString(GetWorld(), FString::Printf(TEXT("TakeDamage: %f"), DamageAmount), true, true, FLinearColor::Red, 5.f);
 
 	float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-	StatusComponent->ApplyDamage(ActualDamage);
+	ADXGameStateBase* DXGameState = Cast<ADXGameStateBase>(UGameplayStatics::GetGameState(this));
+	if (IsValid(DXGameState) == true && DXGameState->MatchState == EMatchState::Playing)
+	{
+		StatusComponent->ApplyDamage(ActualDamage);
+	}
+
 	return ActualDamage;
 }
 
@@ -194,6 +208,15 @@ void ADXPlayerCharacter::OnRep_CanAttack()
 	else
 	{
 		GetCharacterMovement()->SetMovementMode(MOVE_None);
+	}
+}
+
+void ADXPlayerCharacter::OnDeath()
+{
+	ADXPlayerController* PlayerController = GetController<ADXPlayerController>();
+	if (IsValid(PlayerController) == true && HasAuthority() == true)
+	{
+		PlayerController->OnCharacterDead();
 	}
 }
 
